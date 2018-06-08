@@ -27,7 +27,7 @@ defmodule ServerSentEventStage do
   end
 
   # Server functions
-  defstruct [:url, buffer: "", connected?: false]
+  defstruct [:url, buffer: "", state: :not_connected]
 
   @doc false
   def init(url) do
@@ -38,25 +38,25 @@ defmodule ServerSentEventStage do
   @doc false
   def handle_info(:connect, state) do
     url = compute_url(state)
-    Logger.debug(fn -> "#{__MODULE__} requesting #{url}" end)
-
-    headers = [
-      {"Accept", "text/event-stream"}
-    ]
-
-    {:ok, _} =
-      HTTPoison.get(
-        url,
-        headers,
-        recv_timeout: 60_000,
-        stream_to: self()
-      )
-
+    :ok = connect_to_url(url)
     {:noreply, [], state}
   end
 
   def handle_info(%HTTPoison.AsyncStatus{code: 200}, state) do
     Logger.debug(fn -> "#{__MODULE__} connected" end)
+    state = %{state | state: :connected}
+    {:noreply, [], state}
+  end
+
+  def handle_info(%HTTPoison.AsyncStatus{code: code}, state)
+      when code in [301, 302, 303, 307, 308] do
+    state = %{state | state: :redirecting}
+    {:noreply, [], state}
+  end
+
+  def handle_info(%HTTPoison.AsyncHeaders{headers: headers}, %{state: :redirecting} = state) do
+    {_, location} = Enum.find(headers, &(String.downcase(elem(&1, 0)) == "location"))
+    state = %{state | state: {:redirect, location}}
     {:noreply, [], state}
   end
 
@@ -64,7 +64,7 @@ defmodule ServerSentEventStage do
     {:noreply, [], state}
   end
 
-  def handle_info(%HTTPoison.AsyncChunk{chunk: chunk}, state) do
+  def handle_info(%HTTPoison.AsyncChunk{chunk: chunk}, %{state: :connected} = state) do
     buffer = state.buffer <> chunk
     event_binaries = String.split(buffer, "\n\n")
     {event_binaries, [buffer]} = Enum.split(event_binaries, -1)
@@ -84,6 +84,11 @@ defmodule ServerSentEventStage do
     {:noreply, events, state}
   end
 
+  def handle_info(%HTTPoison.AsyncChunk{}, state) do
+    # ignore chunks received unexpectedly
+    {:noreply, [], state}
+  end
+
   def handle_info(%HTTPoison.Error{reason: reason}, state) do
     Logger.error(fn -> "#{__MODULE__} HTTP error: #{inspect(reason)}" end)
     state = %{state | buffer: ""}
@@ -91,26 +96,50 @@ defmodule ServerSentEventStage do
     {:noreply, [], state}
   end
 
+  def handle_info(%HTTPoison.AsyncEnd{}, %{state: {:redirect, new_url}} = state) do
+    :ok = connect_to_url(new_url)
+    state = %{state | buffer: "", state: :connected}
+    {:noreply, [], state}
+  end
+
   def handle_info(%HTTPoison.AsyncEnd{}, state) do
     Logger.info(fn -> "#{__MODULE__} disconnected, reconnecting..." end)
-    state = %{state | buffer: ""}
+    state = %{state | buffer: "", state: :connected}
     send(self(), :connect)
     {:noreply, [], state}
   end
 
   @doc false
   def handle_demand(_demand, state) do
-    state = maybe_connect(state)
+    :ok = maybe_connect(state)
     {:noreply, [], state}
   end
 
-  defp maybe_connect(%{connected?: false} = state) do
-    send(self(), :connect)
-    %{state | connected?: true}
+  defp connect_to_url(url) do
+    Logger.debug(fn -> "#{__MODULE__} requesting #{url}" end)
+
+    headers = [
+      {"Accept", "text/event-stream"}
+    ]
+
+    {:ok, _} =
+      HTTPoison.get(
+        url,
+        headers,
+        recv_timeout: 60_000,
+        stream_to: self()
+      )
+
+    :ok
   end
 
-  defp maybe_connect(state) do
-    state
+  defp maybe_connect(%{state: :not_connected}) do
+    send(self(), :connect)
+    :ok
+  end
+
+  defp maybe_connect(_state) do
+    :ok
   end
 
   defp compute_url(%{url: {m, f, a}}) do
