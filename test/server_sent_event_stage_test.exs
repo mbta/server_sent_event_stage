@@ -21,10 +21,11 @@ defmodule ServerSentEventStageTest do
   end
 
   describe "handle_info/2" do
-    test "ignores a 200 status" do
+    test "connects after 200 status" do
       state = %ServerSentEventStage{}
 
-      assert {:noreply, [], ^state} = handle_info(%HTTPoison.AsyncStatus{code: 200}, state)
+      assert {:noreply, [], new_state} = handle_info(%HTTPoison.AsyncStatus{code: 200}, state)
+      assert new_state.state == :connected
     end
 
     test "crashes on a non-200 status" do
@@ -42,13 +43,13 @@ defmodule ServerSentEventStageTest do
     end
 
     test "does nothing with a partial chunk" do
-      state = %ServerSentEventStage{}
+      state = %ServerSentEventStage{state: :connected}
 
       assert {:noreply, [], _state} = handle_info(%HTTPoison.AsyncChunk{chunk: "data:"}, state)
     end
 
     test "with a full chunk, returns an event" do
-      state = %ServerSentEventStage{}
+      state = %ServerSentEventStage{state: :connected}
 
       assert {:noreply, [], state} = handle_info(%HTTPoison.AsyncChunk{chunk: "data:"}, state)
 
@@ -88,6 +89,24 @@ defmodule ServerSentEventStageTest do
       Bypass.up(bypass)
       # should receive another event
       assert_receive {:events, [%Event{}]}
+    end
+
+    test "redirects to a new URL if provided", %{bypass: bypass} do
+      redirected_bypass = Bypass.open()
+
+      Bypass.expect(bypass, fn conn ->
+        conn
+        |> Plug.Conn.put_resp_header("location", "http://127.0.0.1:#{redirected_bypass.port}")
+        |> Plug.Conn.send_resp(307, "data: ignore me\n\n")
+      end)
+
+      Bypass.expect(redirected_bypass, fn conn ->
+        Plug.Conn.send_resp(conn, 200, ~s(data: %{}\n\n))
+      end)
+
+      start_producer(bypass)
+      assert_receive {:events, [%Event{data: "%{}\n"}]}
+      refute_receive {:events, [%Event{data: "ignore me\n"}]}
     end
 
     test "can connect to a URL given by a function", %{bypass: bypass} do
