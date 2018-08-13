@@ -21,24 +21,28 @@ defmodule ServerSentEventStage do
   Other arguments are passed as options to `GenStage.start_link/3`.
   """
   def start_link(args) do
-    url = Keyword.fetch!(args, :url)
+    _url = Keyword.fetch!(args, :url)
     opts = Keyword.take(args, ~w(debug name timeout spawn_opt)a)
-    GenStage.start_link(__MODULE__, url, opts)
+    GenStage.start_link(__MODULE__, args, opts)
   end
 
   # Server functions
-  defstruct [:url, buffer: "", state: :not_connected]
+  defstruct [:url, :headers, buffer: "", state: :not_connected]
 
   @doc false
-  def init(url) do
-    state = %__MODULE__{url: url}
+  def init(args) do
+    state = %__MODULE__{
+      url: Keyword.fetch!(args, :url),
+      headers: Keyword.get(args, :headers, [])
+    }
+
     {:producer, state}
   end
 
   @doc false
   def handle_info(:connect, state) do
     url = compute_url(state)
-    :ok = connect_to_url(url)
+    :ok = connect_to_url(url, state.headers)
     {:noreply, [], state}
   end
 
@@ -97,7 +101,7 @@ defmodule ServerSentEventStage do
   end
 
   def handle_info(%HTTPoison.AsyncEnd{}, %{state: {:redirect, new_url}} = state) do
-    :ok = connect_to_url(new_url)
+    :ok = connect_to_url(new_url, state.headers)
     state = %{state | buffer: "", state: :connected}
     {:noreply, [], state}
   end
@@ -115,11 +119,11 @@ defmodule ServerSentEventStage do
     {:noreply, [], state}
   end
 
-  defp connect_to_url(url) do
+  defp connect_to_url(url, headers) do
     Logger.debug(fn -> "#{__MODULE__} requesting #{url}" end)
 
     headers = [
-      {"Accept", "text/event-stream"}
+      {"Accept", "text/event-stream"} | headers
     ]
 
     {:ok, _} =

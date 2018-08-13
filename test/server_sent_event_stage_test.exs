@@ -78,6 +78,19 @@ defmodule ServerSentEventStageTest do
       assert_receive {:events, [%Event{}]}
     end
 
+    test "verify custom headers are sent", %{bypass: bypass} do
+      Bypass.expect(bypass, fn conn ->
+        # verify custom header was set
+        assert Plug.Conn.get_req_header(conn, "test") == ["confirmed"]
+        # verify that header we didn't set wasn't
+        assert Plug.Conn.get_req_header(conn, "nottest") != ["confirmed"]
+        Plug.Conn.send_resp(conn, 200, ~s(data: %{}\n\n))
+      end)
+
+      start_producer(bypass)
+      assert_receive {:events, [%Event{}]}
+    end
+
     test "reconnects when it gets disconnected", %{bypass: bypass} do
       Bypass.expect(bypass, fn conn ->
         Plug.Conn.send_resp(conn, 200, ~s(data: %{}\n\n))
@@ -120,7 +133,8 @@ defmodule ServerSentEventStageTest do
 
     defp start_producer(bypass) do
       url = "http://127.0.0.1:#{bypass.port}"
-      {:ok, producer} = start_link(url: url)
+      headers = [{"test", "confirmed"}]
+      {:ok, producer} = start_link(url: url, headers: headers)
 
       {:ok, _consumer} = __MODULE__.SimpleSubscriber.start_link(self(), producer)
     end
