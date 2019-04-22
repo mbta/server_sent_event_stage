@@ -5,6 +5,8 @@ defmodule ServerSentEventStageTest do
 
   @moduletag :capture_log
 
+  @assert_receive_timeout 500
+
   describe "start_link/1" do
     test "returns a pid when a URL is provided" do
       assert {:ok, pid} = start_link(url: "http://httpbin.org/get")
@@ -28,12 +30,11 @@ defmodule ServerSentEventStageTest do
       assert new_state.state == :connected
     end
 
-    test "crashes on a non-200 status" do
+    test "re-connects on a non-200 status" do
       state = %ServerSentEventStage{}
 
-      assert_raise FunctionClauseError, fn ->
-        handle_info(%HTTPoison.AsyncStatus{code: 401}, state)
-      end
+      assert {:noreply, [], _state} = handle_info(%HTTPoison.AsyncStatus{code: 401}, state)
+      assert_received :connect
     end
 
     test "ignores headers" do
@@ -58,6 +59,19 @@ defmodule ServerSentEventStageTest do
 
       assert event.data == "data\n"
     end
+
+    test "reconnects if there's an error" do
+      state = %ServerSentEventStage{}
+
+      assert {:noreply, [], _state} = handle_info(%HTTPoison.Error{reason: :closed}, state)
+      assert_received :connect
+    end
+
+    @tag :capture_log
+    test "ignores unexpected messages" do
+      state = %ServerSentEventStage{}
+      assert {:noreply, [], ^state} = handle_info(:unexpected, state)
+    end
   end
 
   describe "bypass" do
@@ -75,7 +89,7 @@ defmodule ServerSentEventStageTest do
       end)
 
       start_producer(bypass)
-      assert_receive {:events, [%Event{}]}
+      assert_receive {:events, [%Event{}]}, @assert_receive_timeout
     end
 
     test "verify custom headers are sent", %{bypass: bypass} do
@@ -88,7 +102,7 @@ defmodule ServerSentEventStageTest do
       end)
 
       start_producer(bypass)
-      assert_receive {:events, [%Event{}]}
+      assert_receive {:events, [%Event{}]}, @assert_receive_timeout
     end
 
     test "reconnects when it gets disconnected", %{bypass: bypass} do
@@ -97,11 +111,25 @@ defmodule ServerSentEventStageTest do
       end)
 
       start_producer(bypass)
-      assert_receive {:events, [%Event{}]}
-      Bypass.down(bypass)
-      Bypass.up(bypass)
+      assert_receive {:events, [%Event{}]}, @assert_receive_timeout
       # should receive another event
-      assert_receive {:events, [%Event{}]}
+      assert_receive {:events, [%Event{}]}, @assert_receive_timeout
+    end
+
+    test "reconnects after refresh", %{bypass: bypass} do
+      Bypass.expect(bypass, fn conn ->
+        conn = Plug.Conn.send_chunked(conn, 200)
+        {:ok, conn} = Plug.Conn.chunk(conn, ~s(data: %{}\n\n))
+        Process.sleep(1_000)
+        {:ok, conn} = Plug.Conn.chunk(conn, ~s(data: %{}\n\n))
+        conn
+      end)
+
+      {:ok, pid} = start_producer(bypass)
+      assert_receive {:events, [%Event{}]}, @assert_receive_timeout
+      refresh(pid)
+      # should receive another event
+      assert_receive {:events, [%Event{}]}, @assert_receive_timeout
     end
 
     test "redirects to a new URL if provided", %{bypass: bypass} do
@@ -118,8 +146,8 @@ defmodule ServerSentEventStageTest do
       end)
 
       start_producer(bypass)
-      assert_receive {:events, [%Event{data: "%{}\n"}]}
-      refute_receive {:events, [%Event{data: "ignore me\n"}]}
+      assert_receive {:events, [%Event{data: "%{}\n"}]}, @assert_receive_timeout
+      refute_receive {:events, [%Event{data: "ignore me\n"}]}, @assert_receive_timeout
     end
 
     test "can connect to a URL given by a function", %{bypass: bypass} do
@@ -137,6 +165,8 @@ defmodule ServerSentEventStageTest do
       {:ok, producer} = start_link(url: url, headers: headers)
 
       {:ok, _consumer} = __MODULE__.SimpleSubscriber.start_link(self(), producer)
+
+      {:ok, producer}
     end
   end
 

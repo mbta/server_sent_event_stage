@@ -26,6 +26,16 @@ defmodule ServerSentEventStage do
     GenStage.start_link(__MODULE__, args, opts)
   end
 
+  @doc """
+  Refresh the connection by disconnecting and reconnecting.
+
+  Some clients will send a final message, but not terminate the
+  connection=. This function allows a client of SSES to reconnect.
+  """
+  def refresh(server) do
+    GenStage.cast(server, :refresh)
+  end
+
   # Server functions
   defstruct [:url, :headers, :id, buffer: "", state: :not_connected]
 
@@ -46,9 +56,18 @@ defmodule ServerSentEventStage do
     {:noreply, [], %{state | id: id}}
   end
 
-  def handle_info(%HTTPoison.AsyncStatus{id: id, code: 200}, %{id: id} = state) do
-    Logger.debug(fn -> "#{__MODULE__} connected" end)
+  def handle_info(%HTTPoison.AsyncStatus{id: id, code: code}, %{id: id} = state) do
     state = %{state | state: :connected}
+
+    state =
+      if code == 200 do
+        Logger.debug(fn -> "#{__MODULE__} connected" end)
+        state
+      else
+        Logger.warn(fn -> "#{__MODULE__} unexpected status: #{code}" end)
+        do_refresh(state)
+      end
+
     {:noreply, [], state}
   end
 
@@ -56,7 +75,10 @@ defmodule ServerSentEventStage do
     {:noreply, [], state}
   end
 
-  def handle_info(%HTTPoison.AsyncChunk{id: id, chunk: chunk}, %{id: id, state: :connected} = state) do
+  def handle_info(
+        %HTTPoison.AsyncChunk{id: id, chunk: chunk},
+        %{id: id, state: :connected} = state
+      ) do
     buffer = state.buffer <> chunk
     event_binaries = String.split(buffer, "\n\n")
     {event_binaries, [buffer]} = Enum.split(event_binaries, -1)
@@ -76,14 +98,9 @@ defmodule ServerSentEventStage do
     {:noreply, events, state}
   end
 
-  def handle_info(%HTTPoison.AsyncChunk{id: id}, %{id: id} = state) do
-    # ignore chunks received unexpectedly
-    {:noreply, [], state}
-  end
-
   def handle_info(%HTTPoison.Error{id: id, reason: reason}, %{id: id} = state) do
     Logger.error(fn -> "#{__MODULE__} HTTP error: #{inspect(reason)}" end)
-    state = %{state | buffer: ""}
+    state = reset_state(state)
     send(self(), :connect)
     {:noreply, [], state}
   end
@@ -101,9 +118,24 @@ defmodule ServerSentEventStage do
     {:noreply, [], %{state | id: id}}
   end
 
+  def handle_info(msg, state) do
+    # ignore data received unexpectedly
+    Logger.warn(fn ->
+      "#{__MODULE__} unexpected message: #{inspect(msg)}\nState: #{inspect(state)}"
+    end)
+
+    {:noreply, [], state}
+  end
+
   @doc false
   def handle_demand(_demand, state) do
     :ok = maybe_connect(state)
+    {:noreply, [], state}
+  end
+
+  @doc false
+  def handle_cast(:refresh, state) do
+    state = do_refresh(state)
     {:noreply, [], state}
   end
 
@@ -145,5 +177,14 @@ defmodule ServerSentEventStage do
 
   defp reset_state(state) do
     %{state | id: nil, buffer: ""}
+  end
+
+  defp do_refresh(%{id: id} = state) do
+    unless is_nil(id) do
+      :hackney.close(id)
+    end
+
+    send(self(), :connect)
+    reset_state(state)
   end
 end
