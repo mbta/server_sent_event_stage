@@ -52,18 +52,6 @@ defmodule ServerSentEventStage do
     {:noreply, [], state}
   end
 
-  def handle_info(%HTTPoison.AsyncStatus{code: code}, state)
-      when code in [301, 302, 303, 307, 308] do
-    state = %{state | state: :redirecting}
-    {:noreply, [], state}
-  end
-
-  def handle_info(%HTTPoison.AsyncHeaders{headers: headers}, %{state: :redirecting} = state) do
-    {_, location} = Enum.find(headers, &(String.downcase(elem(&1, 0)) == "location"))
-    state = %{state | state: {:redirect, location}}
-    {:noreply, [], state}
-  end
-
   def handle_info(%HTTPoison.AsyncHeaders{}, state) do
     {:noreply, [], state}
   end
@@ -100,16 +88,16 @@ defmodule ServerSentEventStage do
     {:noreply, [], state}
   end
 
-  def handle_info(%HTTPoison.AsyncEnd{}, %{state: {:redirect, new_url}} = state) do
-    :ok = connect_to_url(new_url, state.headers)
-    state = %{state | buffer: "", state: :connected}
-    {:noreply, [], state}
-  end
-
   def handle_info(%HTTPoison.AsyncEnd{}, state) do
     Logger.info(fn -> "#{__MODULE__} disconnected, reconnecting..." end)
     state = %{state | buffer: "", state: :connected}
     send(self(), :connect)
+    {:noreply, [], state}
+  end
+
+  def handle_info(%HTTPoison.AsyncRedirect{to: location}, state) do
+    :ok = connect_to_url(location, state.headers)
+    state = %{state | buffer: "", state: :connected}
     {:noreply, [], state}
   end
 
@@ -131,6 +119,7 @@ defmodule ServerSentEventStage do
         url,
         headers,
         recv_timeout: 60_000,
+        follow_redirect: true,
         stream_to: self()
       )
 
