@@ -90,14 +90,14 @@ defmodule ServerSentEventStage do
 
   def handle_info(%HTTPoison.AsyncEnd{}, state) do
     Logger.info(fn -> "#{__MODULE__} disconnected, reconnecting..." end)
-    state = %{state | buffer: "", state: :connected}
+    state = reset_state(state)
     send(self(), :connect)
     {:noreply, [], state}
   end
 
   def handle_info(%HTTPoison.AsyncRedirect{to: location}, state) do
     :ok = connect_to_url(location, state.headers)
-    state = %{state | buffer: "", state: :connected}
+    state = reset_state(state)
     {:noreply, [], state}
   end
 
@@ -141,5 +141,9 @@ defmodule ServerSentEventStage do
 
   defp compute_url(%{url: url}) when is_binary(url) do
     url
+  end
+
+  defp reset_state(state) do
+    %{state | buffer: ""}
   end
 end
