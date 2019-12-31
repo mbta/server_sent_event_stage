@@ -10,6 +10,7 @@ defmodule ServerSentEventStage do
   use GenStage
   require Logger
   alias ServerSentEventStage.Event
+  alias Mint.HTTP
 
   # Client functions
   @doc """
@@ -37,7 +38,7 @@ defmodule ServerSentEventStage do
   end
 
   # Server functions
-  defstruct [:url, :headers, :id, buffer: "", state: :not_connected]
+  defstruct [:url, :headers, :conn, :ref, buffer: "", redirecting?: false]
 
   @doc false
   def init(args) do
@@ -52,42 +53,102 @@ defmodule ServerSentEventStage do
   @doc false
   def handle_info(:connect, state) do
     url = compute_url(state)
-    {:ok, id} = connect_to_url(url, state.headers)
-    {:noreply, [], %{state | id: id}}
+    state = do_connect(url, state)
+    {:noreply, [], state}
   end
 
-  def handle_info(%HTTPoison.AsyncStatus{id: id, code: code}, %{id: id} = state) do
-    state = %{state | state: :connected}
+  def handle_info(message, %{conn: conn} = state) when conn != nil do
+    case HTTP.stream(state.conn, message) do
+      {:ok, conn, responses} ->
+        state = %{state | conn: conn}
+        {state, events} = Enum.reduce_while(responses, {state, []}, &handle_mint_response/2)
 
-    state =
-      if code == 200 do
-        Logger.debug(fn -> "#{__MODULE__} connected" end)
-        state
-      else
-        Logger.warn(fn -> "#{__MODULE__} unexpected status: #{code}" end)
-        do_refresh(state)
-      end
+        {:noreply, events, state}
+
+      {:error, conn, error, responses} ->
+        state = %{state | conn: conn}
+        ref = state.ref
+        {state, events} = Enum.reduce_while(responses, {state, []}, &handle_mint_response/2)
+        {_, {state, events}} = handle_mint_response({:error, ref, error}, {state, events})
+
+        {:noreply, events, state}
+
+      :unknown ->
+        handle_unknown_info(message, state)
+    end
+  end
+
+  def handle_info(message, state) do
+    handle_unknown_info(message, state)
+  end
+
+  def handle_unknown_info({data_tag, _, _}, state) when data_tag in [:ssl, :tcp] do
+    # The can occur after we've re-connected: drop them on the floor
+    {:noreply, [], state}
+  end
+
+  def handle_unknown_info({closed_tag, _}, state) when closed_tag in [:ssl_closed, :tcp_closed] do
+    # These can occur after we've re-connected: drop them on the floor.
+    {:noreply, [], state}
+  end
+
+  def handle_unknown_info(message, state) do
+    # ignore data received unexpectedly
+    Logger.warn(fn ->
+      "#{__MODULE__} unexpected message: #{inspect(message)}\nState: #{inspect(state)}"
+    end)
 
     {:noreply, [], state}
   end
 
-  def handle_info(%HTTPoison.AsyncHeaders{id: id}, %{id: id} = state) do
-    {:noreply, [], state}
+  defp handle_mint_response({:status, ref, 200}, {%{ref: ref}, _events} = acc) do
+    Logger.debug(fn -> "#{__MODULE__} connected" end)
+    {:cont, acc}
   end
 
-  def handle_info(
-        %HTTPoison.AsyncChunk{id: id, chunk: chunk},
-        %{id: id, state: :connected} = state
-      ) do
+  defp handle_mint_response({:status, ref, redirect_code}, {%{ref: ref} = state, events})
+       when redirect_code in [301, 302, 307] do
+    Logger.debug(fn -> "#{__MODULE__} connected, received redirect #{redirect_code}" end)
+    state = %{state | redirecting?: true}
+    {:cont, {state, events}}
+  end
+
+  defp handle_mint_response({:status, ref, code}, {%{ref: ref} = state, events}) do
+    Logger.warn(fn -> "#{__MODULE__} unexpected status: #{code}" end)
+    state = do_refresh(state)
+    {:halt, {state, events}}
+  end
+
+  defp handle_mint_response(
+         {:headers, ref, _headers},
+         {%{ref: ref, redirecting?: false}, _events} = acc
+       ) do
+    {:cont, acc}
+  end
+
+  defp handle_mint_response(
+         {:headers, ref, headers},
+         {%{ref: ref, redirecting?: true} = state, events}
+       ) do
+    {"location", new_location} =
+      Enum.find(headers, fn {header, _value} -> header == "location" end)
+
+    state = reset_state(state)
+    state = do_connect(new_location, state)
+    {:halt, {state, events}}
+  end
+
+  defp handle_mint_response({:data, ref, chunk}, {%{ref: ref} = state, events}) do
     buffer = state.buffer <> chunk
     event_binaries = String.split(buffer, "\n\n")
     {event_binaries, [buffer]} = Enum.split(event_binaries, -1)
-    events = Enum.map(event_binaries, &Event.from_string/1)
 
-    unless events == [] do
-      Logger.info(fn -> "#{__MODULE__} sending #{length(events)} events" end)
+    new_events = Enum.map(event_binaries, &Event.from_string/1)
 
-      for event <- events do
+    unless new_events == [] do
+      Logger.info(fn -> "#{__MODULE__} sending #{length(new_events)} events" end)
+
+      for event <- new_events do
         Logger.debug(fn ->
           inspect(event, limit: :infinity, printable_limit: :infinity)
         end)
@@ -95,36 +156,20 @@ defmodule ServerSentEventStage do
     end
 
     state = %{state | buffer: buffer}
-    {:noreply, events, state}
+    {:cont, {state, events ++ new_events}}
   end
 
-  def handle_info(%HTTPoison.Error{id: id, reason: reason}, %{id: id} = state) do
-    Logger.error(fn -> "#{__MODULE__} HTTP error: #{inspect(reason)}" end)
-    state = reset_state(state)
-    send(self(), :connect)
-    {:noreply, [], state}
-  end
-
-  def handle_info(%HTTPoison.AsyncEnd{id: id}, %{id: id} = state) do
+  defp handle_mint_response({:done, ref}, {%{ref: ref} = state, events}) do
     Logger.info(fn -> "#{__MODULE__} disconnected, reconnecting..." end)
-    state = reset_state(state)
-    send(self(), :connect)
-    {:noreply, [], state}
+    state = do_refresh(state)
+    {:halt, {state, events}}
   end
 
-  def handle_info(%HTTPoison.AsyncRedirect{id: id, to: location}, %{id: id} = state) do
-    {:ok, id} = connect_to_url(location, state.headers)
-    state = reset_state(state)
-    {:noreply, [], %{state | id: id}}
-  end
+  defp handle_mint_response({:error, ref, reason}, {%{ref: ref} = state, events}) do
+    Logger.error(fn -> "#{__MODULE__} HTTP error: #{inspect(reason)}" end)
 
-  def handle_info(msg, state) do
-    # ignore data received unexpectedly
-    Logger.warn(fn ->
-      "#{__MODULE__} unexpected message: #{inspect(msg)}\nState: #{inspect(state)}"
-    end)
-
-    {:noreply, [], state}
+    state = do_refresh(state)
+    {:halt, {state, events}}
   end
 
   @doc false
@@ -139,31 +184,69 @@ defmodule ServerSentEventStage do
     {:noreply, [], state}
   end
 
+  defp do_connect(url, state) do
+    case connect_to_url(url, state.headers) do
+      {:ok, conn, ref} ->
+        %{state | conn: conn, ref: ref}
+
+      {:error, reason} ->
+        Logger.error(fn ->
+          "#{__MODULE__} unable to connect url=#{inspect(url)} reason=#{inspect(reason)}"
+        end)
+
+        do_refresh(state)
+    end
+  end
+
   defp connect_to_url(url, headers) do
     Logger.debug(fn -> "#{__MODULE__} requesting #{url}" end)
 
-    headers = [
-      {"Accept", "text/event-stream"} | headers
-    ]
+    uri = URI.parse(url)
 
-    {:ok, %{id: id}} =
-      HTTPoison.get(
-        url,
-        headers,
-        recv_timeout: 60_000,
-        follow_redirect: true,
-        stream_to: self()
-      )
+    scheme =
+      case uri.scheme do
+        "https" -> :https
+        "http" -> :http
+      end
 
-    {:ok, id}
+    case HTTP.connect(scheme, uri.host, uri.port, transport_opts: [timeout: 60_000]) do
+      {:ok, conn} ->
+        headers = [
+          {"Accept", "text/event-stream"} | headers
+        ]
+
+        path =
+          case {uri.path, uri.query} do
+            {nil, nil} ->
+              "/"
+
+            {path, nil} ->
+              path
+
+            {nil, query} ->
+              "/?" <> query
+
+            {path, query} ->
+              path <> "?" <> query
+          end
+
+        {:ok, conn, ref} = HTTP.request(conn, "GET", path, headers, nil)
+
+        {:ok, conn, ref}
+
+      {:error, _reason} = e ->
+        e
+
+      {:error, _conn, reason} ->
+        {:error, reason}
+    end
   end
 
-  defp maybe_connect(%{state: :not_connected}) do
-    send(self(), :connect)
-    :ok
-  end
+  defp maybe_connect(%{conn: conn}) do
+    if conn == nil or not HTTP.open?(conn, :read) do
+      send(self(), :connect)
+    end
 
-  defp maybe_connect(_state) do
     :ok
   end
 
@@ -176,14 +259,14 @@ defmodule ServerSentEventStage do
   end
 
   defp reset_state(state) do
-    %{state | id: nil, buffer: ""}
-  end
-
-  defp do_refresh(%{id: id} = state) do
-    unless is_nil(id) do
-      :hackney.close(id)
+    if state.conn != nil and HTTP.open?(state.conn, :read) do
+      {:ok, _conn} = HTTP.close(state.conn)
     end
 
+    %{state | conn: nil, ref: nil, redirecting?: false, buffer: ""}
+  end
+
+  defp do_refresh(state) do
     send(self(), :connect)
     reset_state(state)
   end

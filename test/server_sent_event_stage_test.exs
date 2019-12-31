@@ -2,6 +2,7 @@ defmodule ServerSentEventStageTest do
   use ExUnit.Case
   import ServerSentEventStage
   alias ServerSentEventStage.Event
+  import ExUnit.CaptureLog
 
   @moduletag :capture_log
 
@@ -23,61 +24,28 @@ defmodule ServerSentEventStageTest do
   end
 
   describe "handle_info/2" do
-    test "connects after 200 status" do
-      state = %ServerSentEventStage{}
-
-      assert {:noreply, [], new_state} = handle_info(%HTTPoison.AsyncStatus{code: 200}, state)
-      assert new_state.state == :connected
-    end
-
-    test "re-connects on a non-200 status" do
-      state = %ServerSentEventStage{}
-
-      assert {:noreply, [], _state} = handle_info(%HTTPoison.AsyncStatus{code: 401}, state)
-      assert_received :connect
-    end
-
-    test "ignores headers" do
-      state = %ServerSentEventStage{}
-
-      assert {:noreply, [], ^state} = handle_info(%HTTPoison.AsyncHeaders{}, state)
-    end
-
-    test "does nothing with a partial chunk" do
-      state = %ServerSentEventStage{state: :connected}
-
-      assert {:noreply, [], _state} = handle_info(%HTTPoison.AsyncChunk{chunk: "data:"}, state)
-    end
-
-    test "with a full chunk, returns an event" do
-      state = %ServerSentEventStage{state: :connected}
-
-      assert {:noreply, [], state} = handle_info(%HTTPoison.AsyncChunk{chunk: "data:"}, state)
-
-      assert {:noreply, [event], _state} =
-               handle_info(%HTTPoison.AsyncChunk{chunk: "data\n\n"}, state)
-
-      assert event.data == "data\n"
-    end
-
-    test "reconnects if there's an error" do
-      state = %ServerSentEventStage{}
-
-      assert {:noreply, [], _state} = handle_info(%HTTPoison.Error{reason: :closed}, state)
-      assert_received :connect
-    end
-
     @tag :capture_log
     test "ignores unexpected messages" do
       state = %ServerSentEventStage{}
       assert {:noreply, [], ^state} = handle_info(:unexpected, state)
+    end
+
+    @tag :capture_log
+    test "ignores {:ssl, _port, _data} messages" do
+      state = %ServerSentEventStage{conn: %Mint.HTTP1{}}
+      assert {:noreply, [], ^state} = handle_info({:ssl, :port, "data"}, state)
+    end
+
+    @tag :capture_log
+    test "ignores {:ssl_closed, _port} messages" do
+      state = %ServerSentEventStage{conn: %Mint.HTTP1{}}
+      assert {:noreply, [], ^state} = handle_info({:ssl_closed, :port}, state)
     end
   end
 
   describe "bypass" do
     setup do
       Application.ensure_all_started(:bypass)
-      Application.ensure_all_started(:httpoison)
       bypass = Bypass.open()
       {:ok, bypass: bypass}
     end
@@ -85,7 +53,7 @@ defmodule ServerSentEventStageTest do
     test "sends an event when fully parsed", %{bypass: bypass} do
       Bypass.expect(bypass, fn conn ->
         assert Plug.Conn.get_req_header(conn, "accept") == ["text/event-stream"]
-        Plug.Conn.send_resp(conn, 200, ~s(data: %{}\n\n))
+        Plug.Conn.send_resp(conn, 200, ~s(data: {}\n\n))
       end)
 
       start_producer(bypass)
@@ -98,7 +66,7 @@ defmodule ServerSentEventStageTest do
         assert Plug.Conn.get_req_header(conn, "test") == ["confirmed"]
         # verify that header we didn't set wasn't
         assert Plug.Conn.get_req_header(conn, "nottest") != ["confirmed"]
-        Plug.Conn.send_resp(conn, 200, ~s(data: %{}\n\n))
+        Plug.Conn.send_resp(conn, 200, ~s(data: {}\n\n))
       end)
 
       start_producer(bypass)
@@ -107,7 +75,7 @@ defmodule ServerSentEventStageTest do
 
     test "reconnects when it gets disconnected", %{bypass: bypass} do
       Bypass.expect(bypass, fn conn ->
-        Plug.Conn.send_resp(conn, 200, ~s(data: %{}\n\n))
+        Plug.Conn.send_resp(conn, 200, ~s(data: {}\n\n))
       end)
 
       start_producer(bypass)
@@ -116,12 +84,25 @@ defmodule ServerSentEventStageTest do
       assert_receive {:events, [%Event{}]}, @assert_receive_timeout
     end
 
+    test "reconnects when it can't make a TCP connection", %{bypass: bypass} do
+      Bypass.expect(bypass, fn conn ->
+        Plug.Conn.send_resp(conn, 200, ~s(data: {}\n\n))
+      end)
+
+      start_producer(bypass)
+      assert_receive {:events, [%Event{}]}, @assert_receive_timeout
+      Bypass.down(bypass)
+      Process.sleep(100)
+      Bypass.up(bypass)
+      # should receive another event
+      assert_receive {:events, [%Event{}]}, @assert_receive_timeout
+    end
+
     test "reconnects after refresh", %{bypass: bypass} do
       Bypass.expect(bypass, fn conn ->
         conn = Plug.Conn.send_chunked(conn, 200)
-        {:ok, conn} = Plug.Conn.chunk(conn, ~s(data: %{}\n\n))
-        Process.sleep(1_000)
-        {:ok, conn} = Plug.Conn.chunk(conn, ~s(data: %{}\n\n))
+        {:ok, conn} = Plug.Conn.chunk(conn, ~s(data: {}\n\n))
+        Process.sleep(:infinity)
         conn
       end)
 
@@ -130,6 +111,7 @@ defmodule ServerSentEventStageTest do
       refresh(pid)
       # should receive another event
       assert_receive {:events, [%Event{}]}, @assert_receive_timeout
+      Bypass.pass(bypass)
     end
 
     test "redirects to a new URL if provided", %{bypass: bypass} do
@@ -142,21 +124,74 @@ defmodule ServerSentEventStageTest do
       end)
 
       Bypass.expect(redirected_bypass, fn conn ->
-        Plug.Conn.send_resp(conn, 200, ~s(data: %{}\n\n))
+        Plug.Conn.send_resp(conn, 200, ~s(data: {}\n\n))
       end)
 
       start_producer(bypass)
-      assert_receive {:events, [%Event{data: "%{}\n"}]}, @assert_receive_timeout
+      assert_receive {:events, [%Event{data: "{}\n"}]}, @assert_receive_timeout
       refute_receive {:events, [%Event{data: "ignore me\n"}]}, @assert_receive_timeout
     end
 
     test "can connect to a URL given by a function", %{bypass: bypass} do
       Bypass.expect(bypass, fn conn ->
-        Plug.Conn.send_resp(conn, 200, ~s(data: %{}\n\n))
+        Plug.Conn.send_resp(conn, 200, ~s(data: {}\n\n))
       end)
 
       {:ok, pid} = start_link(url: {__MODULE__.Url, :url, [bypass.port]})
       assert %Event{} = Enum.at(GenStage.stream([pid]), 0)
+    end
+
+    test "logs a message on invalid status", %{bypass: bypass} do
+      Bypass.expect(bypass, fn conn ->
+        Plug.Conn.send_resp(conn, 500, "")
+      end)
+
+      log =
+        capture_log(fn ->
+          start_producer(bypass)
+          Process.sleep(100)
+        end)
+
+      assert log =~ "unexpected status"
+    end
+
+    test "logs a message on invalid HTTP responses", %{bypass: bypass} do
+      Bypass.expect(bypass, fn conn ->
+        conn
+        |> Plug.Conn.put_resp_header("transfer-encoding", "transfer-encoding")
+        |> Plug.Conn.put_resp_header("content-length", "1")
+        |> Plug.Conn.send_resp(200, "d")
+      end)
+
+      log =
+        capture_log(fn ->
+          start_producer(bypass)
+          Process.sleep(100)
+        end)
+
+      assert log =~ "HTTP error"
+    end
+
+    test "can connect with a path/query", %{bypass: bypass} do
+      Bypass.expect(bypass, fn conn ->
+        Plug.Conn.send_resp(conn, 200, "data: #{conn.request_path} #{conn.query_string}\n\n")
+      end)
+
+      {:ok, pid} = start_link(url: "http://127.0.0.1:#{bypass.port}")
+      assert %Event{data: "/ \n"} = Enum.at(GenStage.stream([pid]), 0)
+      GenStage.stop(pid)
+
+      {:ok, pid} = start_link(url: "http://127.0.0.1:#{bypass.port}/path")
+      assert %Event{data: "/path \n"} = Enum.at(GenStage.stream([pid]), 0)
+      GenStage.stop(pid)
+
+      {:ok, pid} = start_link(url: "http://127.0.0.1:#{bypass.port}/path?query")
+      assert %Event{data: "/path query\n"} = Enum.at(GenStage.stream([pid]), 0)
+      GenStage.stop(pid)
+
+      {:ok, pid} = start_link(url: "http://127.0.0.1:#{bypass.port}?query")
+      assert %Event{data: "/ query\n"} = Enum.at(GenStage.stream([pid]), 0)
+      GenStage.stop(pid)
     end
 
     defp start_producer(bypass) do

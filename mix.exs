@@ -29,7 +29,8 @@ defmodule ServerSentEventStage.MixProject do
   defp deps do
     [
       {:gen_stage, "~> 0.13"},
-      {:httpoison, "~> 1.1"},
+      {:mint, "~> 1.0"},
+      {:castore, "~> 0.1", optional: true},
       {:bypass, "~> 0.8", only: :test, optional: true},
       {:excoveralls, "~> 0.8", only: :test, optional: true},
       {:ex_doc, "~> 0.18", optional: true}
