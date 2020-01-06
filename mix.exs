@@ -28,12 +28,12 @@ defmodule ServerSentEventStage.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:gen_stage, "~> 0.13"},
+      {:gen_stage, "~> 0.14"},
       {:mint, "~> 1.0"},
       {:castore, "~> 0.1", optional: true},
-      {:bypass, "~> 0.8", only: :test, optional: true},
-      {:excoveralls, "~> 0.8", only: :test, optional: true},
-      {:ex_doc, "~> 0.18", optional: true}
+      {:bypass, "~> 1.0", only: :test, optional: true},
+      {:excoveralls, "~> 0.12", only: :test, optional: true},
+      {:ex_doc, "~> 0.21", optional: true}
     ]
   end
 
