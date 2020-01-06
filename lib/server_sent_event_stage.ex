@@ -82,17 +82,18 @@ defmodule ServerSentEventStage do
     handle_unknown_info(message, state)
   end
 
-  def handle_unknown_info({data_tag, _, _}, state) when data_tag in [:ssl, :tcp] do
+  defp handle_unknown_info({data_tag, _, _}, state) when data_tag in [:ssl, :tcp] do
     # The can occur after we've re-connected: drop them on the floor
     {:noreply, [], state}
   end
 
-  def handle_unknown_info({closed_tag, _}, state) when closed_tag in [:ssl_closed, :tcp_closed] do
+  defp handle_unknown_info({closed_tag, _}, state)
+       when closed_tag in [:ssl_closed, :tcp_closed] do
     # These can occur after we've re-connected: drop them on the floor.
     {:noreply, [], state}
   end
 
-  def handle_unknown_info(message, state) do
+  defp handle_unknown_info(message, state) do
     # ignore data received unexpectedly
     Logger.warn(fn ->
       "#{__MODULE__} unexpected message: #{inspect(message)}\nState: #{inspect(state)}"
