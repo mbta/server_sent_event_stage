@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.0
+
+- Switch to Mint as our HTTP library. We optionally depend on `ca_store` for certificate validation.
+
 ## 0.4.1
 
 - Support refreshing the connection. For some SSE clients, they'll send a final message but not disconnected. This allows the upstream consumer of the stream to reconnect.
