@@ -3,6 +3,7 @@
 ## 1.0.0
 
 - Switch to Mint as our HTTP library. We optionally depend on `ca_store` for certificate validation.
+- Bump the minimum supported Elixir version to 1.7
 
 ## 0.4.1
 
