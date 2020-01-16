@@ -38,7 +38,7 @@ defmodule ServerSentEventStage do
   end
 
   # Server functions
-  defstruct [:url, :headers, :conn, :ref, buffer: "", redirecting?: false]
+  defstruct [:url, :headers, :connected_url, :conn, :ref, buffer: "", redirecting?: false]
 
   @doc false
   def init(args) do
@@ -102,20 +102,28 @@ defmodule ServerSentEventStage do
     {:noreply, [], state}
   end
 
-  defp handle_mint_response({:status, ref, 200}, {%{ref: ref}, _events} = acc) do
-    Logger.debug(fn -> "#{__MODULE__} connected" end)
+  defp handle_mint_response({:status, ref, 200}, {%{ref: ref} = state, _events} = acc) do
+    Logger.debug(fn -> "#{__MODULE__} connected url=#{inspect(state.connected_url)}" end)
     {:cont, acc}
   end
 
   defp handle_mint_response({:status, ref, redirect_code}, {%{ref: ref} = state, events})
        when redirect_code in [301, 302, 307] do
-    Logger.debug(fn -> "#{__MODULE__} connected, received redirect #{redirect_code}" end)
+    Logger.debug(fn ->
+      "#{__MODULE__} connected, received redirect url=#{inspect(state.connected_url)} code=#{
+        redirect_code
+      }"
+    end)
+
     state = %{state | redirecting?: true}
     {:cont, {state, events}}
   end
 
   defp handle_mint_response({:status, ref, code}, {%{ref: ref} = state, events}) do
-    Logger.warn(fn -> "#{__MODULE__} unexpected status: #{code}" end)
+    Logger.warn(fn ->
+      "#{__MODULE__} unexpected status url=#{inspect(state.connected_url)} code=#{code}"
+    end)
+
     do_refresh!()
     {:halt, {state, events}}
   end
@@ -146,7 +154,11 @@ defmodule ServerSentEventStage do
     new_events = Enum.map(event_binaries, &Event.from_string/1)
 
     unless new_events == [] do
-      Logger.info(fn -> "#{__MODULE__} sending #{length(new_events)} events" end)
+      Logger.info(fn ->
+        "#{__MODULE__} sending events url=#{inspect(state.connected_url)} count=#{
+          length(new_events)
+        }"
+      end)
 
       for event <- new_events do
         Logger.debug(fn ->
@@ -160,13 +172,18 @@ defmodule ServerSentEventStage do
   end
 
   defp handle_mint_response({:done, ref}, {%{ref: ref} = state, events}) do
-    Logger.info(fn -> "#{__MODULE__} disconnected, reconnecting..." end)
+    Logger.info(fn ->
+      "#{__MODULE__} disconnected, reconnecting... url=#{inspect(state.connected_url)}"
+    end)
+
     do_refresh!()
     {:halt, {state, events}}
   end
 
   defp handle_mint_response({:error, ref, reason}, {%{ref: ref} = state, events}) do
-    Logger.error(fn -> "#{__MODULE__} HTTP error: #{inspect(reason)}" end)
+    Logger.error(fn ->
+      "#{__MODULE__} HTTP error url=#{inspect(state.connected_url)} reason=#{inspect(reason)}"
+    end)
 
     do_refresh!()
     {:halt, {state, events}}
@@ -189,7 +206,7 @@ defmodule ServerSentEventStage do
 
     case connect_to_url(url, state.headers) do
       {:ok, conn, ref} ->
-        %{state | conn: conn, ref: ref}
+        %{state | connected_url: url, conn: conn, ref: ref}
 
       {:error, reason} ->
         Logger.error(fn ->
@@ -267,7 +284,7 @@ defmodule ServerSentEventStage do
       {:ok, _conn} = HTTP.close(state.conn)
     end
 
-    %{state | conn: nil, ref: nil, redirecting?: false, buffer: ""}
+    %{state | connected_url: nil, conn: nil, ref: nil, redirecting?: false, buffer: ""}
   end
 
   defp do_refresh! do
