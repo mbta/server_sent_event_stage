@@ -116,7 +116,7 @@ defmodule ServerSentEventStage do
 
   defp handle_mint_response({:status, ref, code}, {%{ref: ref} = state, events}) do
     Logger.warn(fn -> "#{__MODULE__} unexpected status: #{code}" end)
-    state = do_refresh(state)
+    do_refresh!()
     {:halt, {state, events}}
   end
 
@@ -134,7 +134,6 @@ defmodule ServerSentEventStage do
     {"location", new_location} =
       Enum.find(headers, fn {header, _value} -> header == "location" end)
 
-    state = reset_state(state)
     state = do_connect(new_location, state)
     {:halt, {state, events}}
   end
@@ -162,14 +161,14 @@ defmodule ServerSentEventStage do
 
   defp handle_mint_response({:done, ref}, {%{ref: ref} = state, events}) do
     Logger.info(fn -> "#{__MODULE__} disconnected, reconnecting..." end)
-    state = do_refresh(state)
+    do_refresh!()
     {:halt, {state, events}}
   end
 
   defp handle_mint_response({:error, ref, reason}, {%{ref: ref} = state, events}) do
     Logger.error(fn -> "#{__MODULE__} HTTP error: #{inspect(reason)}" end)
 
-    state = do_refresh(state)
+    do_refresh!()
     {:halt, {state, events}}
   end
 
@@ -181,11 +180,13 @@ defmodule ServerSentEventStage do
 
   @doc false
   def handle_cast(:refresh, state) do
-    state = do_refresh(state)
+    do_refresh!()
     {:noreply, [], state}
   end
 
   defp do_connect(url, state) do
+    state = reset_state(state)
+
     case connect_to_url(url, state.headers) do
       {:ok, conn, ref} ->
         %{state | conn: conn, ref: ref}
@@ -195,7 +196,9 @@ defmodule ServerSentEventStage do
           "#{__MODULE__} unable to connect url=#{inspect(url)} reason=#{inspect(reason)}"
         end)
 
-        do_refresh(state)
+        do_refresh!()
+
+        state
     end
   end
 
@@ -267,8 +270,7 @@ defmodule ServerSentEventStage do
     %{state | conn: nil, ref: nil, redirecting?: false, buffer: ""}
   end
 
-  defp do_refresh(state) do
+  defp do_refresh! do
     send(self(), :connect)
-    reset_state(state)
   end
 end
