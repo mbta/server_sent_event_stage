@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1
+
+- Fix a process leak when re-connecting to the remote server
+- Include the URL along with the log messages to distinguish multiple stages
+
 ## 1.0.0
 
 - Switch to Mint as our HTTP library. We optionally depend on `ca_store` for certificate validation.
