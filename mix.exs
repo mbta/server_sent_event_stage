@@ -4,7 +4,7 @@ defmodule ServerSentEventStage.MixProject do
   def project do
     [
       app: :server_sent_event_stage,
-      version: "1.0.1",
+      version: "1.0.2",
       elixir: "~> 1.7",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -28,7 +28,7 @@ defmodule ServerSentEventStage.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:gen_stage, "~> 0.14"},
+      {:gen_stage, "~> 1.0"},
       {:mint, "~> 1.0"},
       {:castore, "~> 0.1", optional: true},
       {:bypass, "~> 1.0", only: :test, optional: true},
