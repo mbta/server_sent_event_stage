@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.2
+
+- Bump gen_stage to version 1.0.
+- Update ex_doc and excoveralls dependencies.
+
 ## 1.0.1
 
 - Fix a process leak when re-connecting to the remote server
