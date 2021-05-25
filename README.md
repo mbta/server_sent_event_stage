@@ -2,7 +2,7 @@
 
 A GenStage producer which parses the ServerSentEvent protocol.
 
-[![Build Status](https://semaphoreci.com/api/v1/mbta/server_sent_event_stage/branches/master/shields_badge.svg)](https://semaphoreci.com/mbta/server_sent_event_stage) [![codecov](https://codecov.io/gh/mbta/server_sent_event_stage/branch/master/graph/badge.svg)](https://codecov.io/gh/mbta/server_sent_event_stage)
+[![Build Status](https://github.com/mbta/server_sent_event_stage/actions/workflows/elixir.yml/badge.svg)](https://github.com/mbta/server_sent_event_stage/actions/workflows/elixir.yml)
 
 ## Installation
 
