@@ -70,4 +70,8 @@ jobs:
         with:
           name: elixir-lcov
           path: cover/
+      - name: Hex.pm build
+        run: |
+          mix hex.build
+          mix docs
       - uses: mbta/actions/dialyzer@v1
