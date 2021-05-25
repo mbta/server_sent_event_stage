@@ -13,8 +13,10 @@ defmodule ServerSentEventStage.MixProject do
       source_url: "https://github.com/mbta/server_sent_event_stage",
       docs: [main: "readme", extras: ["README.md"]],
       package: package(),
-      test_coverage: [tool: ExCoveralls],
-      preferred_cli_env: [coveralls: :test, "coveralls.html": :test, "coveralls.json": :test]
+      dialyzer: [
+        plt_add_deps: :app_tree
+      ],
+      test_coverage: [tool: LcovEx]
     ]
   end
 
@@ -32,7 +34,9 @@ defmodule ServerSentEventStage.MixProject do
       {:mint, "~> 1.0"},
       {:castore, "~> 0.1", optional: true},
       {:bypass, "~> 1.0", only: :test, optional: true},
-      {:excoveralls, "~> 0.12", only: :test, optional: true},
+      {:lcov_ex, "~> 0.2", only: :test, optional: true},
+      {:credo, "~> 1.5", only: :dev, optional: true},
+      {:dialyxir, "~> 1.1", only: :dev, optional: true},
       {:ex_doc, "~> 0.21", optional: true}
     ]
   end
