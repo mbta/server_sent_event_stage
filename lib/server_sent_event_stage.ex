@@ -9,8 +9,8 @@ defmodule ServerSentEventStage do
   """
   use GenStage
   require Logger
-  alias ServerSentEventStage.Event
   alias Mint.HTTP
+  alias ServerSentEventStage.Event
 
   # Client functions
   @doc """
@@ -224,43 +224,46 @@ defmodule ServerSentEventStage do
 
     uri = URI.parse(url)
 
-    scheme =
-      case uri.scheme do
-        "https" -> :https
-        "http" -> :http
+    uri.scheme
+    |> scheme_atom
+    |> HTTP.connect(uri.host, uri.port, transport_opts: [timeout: 60_000])
+    |> handle_connect_response(uri, headers)
+  end
+
+  defp scheme_atom("https"), do: :https
+  defp scheme_atom("http"), do: :http
+
+  defp handle_connect_response({:ok, conn}, uri, headers) do
+    headers = [
+      {"Accept", "text/event-stream"} | headers
+    ]
+
+    path =
+      case {uri.path, uri.query} do
+        {nil, nil} ->
+          "/"
+
+        {path, nil} ->
+          path
+
+        {nil, query} ->
+          "/?" <> query
+
+        {path, query} ->
+          path <> "?" <> query
       end
 
-    case HTTP.connect(scheme, uri.host, uri.port, transport_opts: [timeout: 60_000]) do
-      {:ok, conn} ->
-        headers = [
-          {"Accept", "text/event-stream"} | headers
-        ]
+    {:ok, conn, ref} = HTTP.request(conn, "GET", path, headers, nil)
 
-        path =
-          case {uri.path, uri.query} do
-            {nil, nil} ->
-              "/"
+    {:ok, conn, ref}
+  end
 
-            {path, nil} ->
-              path
+  defp handle_connect_response({:error, _reason} = e, _uri_, _headers) do
+    e
+  end
 
-            {nil, query} ->
-              "/?" <> query
-
-            {path, query} ->
-              path <> "?" <> query
-          end
-
-        {:ok, conn, ref} = HTTP.request(conn, "GET", path, headers, nil)
-
-        {:ok, conn, ref}
-
-      {:error, _reason} = e ->
-        e
-
-      {:error, _conn, reason} ->
-        {:error, reason}
-    end
+  defp handle_connect_response({:error, _conn, reason}, _uri, _headers) do
+    {:error, reason}
   end
 
   defp maybe_connect(%{conn: conn}) do
