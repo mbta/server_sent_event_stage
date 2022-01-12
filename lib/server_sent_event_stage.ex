@@ -110,9 +110,7 @@ defmodule ServerSentEventStage do
   defp handle_mint_response({:status, ref, redirect_code}, {%{ref: ref} = state, events})
        when redirect_code in [301, 302, 307] do
     Logger.debug(fn ->
-      "#{__MODULE__} connected, received redirect url=#{inspect(state.connected_url)} code=#{
-        redirect_code
-      }"
+      "#{__MODULE__} connected, received redirect url=#{inspect(state.connected_url)} code=#{redirect_code}"
     end)
 
     state = %{state | redirecting?: true}
@@ -155,9 +153,7 @@ defmodule ServerSentEventStage do
 
     unless new_events == [] do
       Logger.info(fn ->
-        "#{__MODULE__} sending events url=#{inspect(state.connected_url)} count=#{
-          length(new_events)
-        }"
+        "#{__MODULE__} sending events url=#{inspect(state.connected_url)} count=#{length(new_events)}"
       end)
 
       for event <- new_events do
