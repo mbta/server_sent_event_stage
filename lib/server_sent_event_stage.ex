@@ -258,10 +258,6 @@ defmodule ServerSentEventStage do
     e
   end
 
-  defp handle_connect_response({:error, _conn, reason}, _uri, _headers) do
-    {:error, reason}
-  end
-
   defp maybe_connect(%{conn: conn}) do
     if conn == nil or not HTTP.open?(conn, :read) do
       send(self(), :connect)
