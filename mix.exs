@@ -31,7 +31,7 @@ defmodule ServerSentEventStage.MixProject do
   defp deps do
     [
       {:gen_stage, "~> 1.0"},
-      {:mint, "~> 1.0"},
+      {:mint, "~> 1.4"},
       {:castore, "~> 0.1", optional: true},
       {:bypass, "~> 1.0", only: :test, optional: true},
       {:lcov_ex, "~> 0.2", only: :test, optional: true},
