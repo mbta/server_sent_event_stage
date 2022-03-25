@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.0
+
+- Bump mint to version 1.4 to support OTP 24.
+
 ## 1.0.2
 
 - Bump gen_stage to version 1.0.
