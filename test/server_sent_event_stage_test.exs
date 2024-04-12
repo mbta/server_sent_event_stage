@@ -194,10 +194,60 @@ defmodule ServerSentEventStageTest do
       GenStage.stop(pid)
     end
 
-    defp start_producer(bypass) do
+    test "applies idle timeout", %{bypass: bypass} do
+      idle_timeout = 200
+
+      {:ok, request_count} = Agent.start_link(fn -> 0 end)
+
+      Bypass.expect(bypass, fn conn ->
+        request_count = Agent.get_and_update(request_count, &{&1, &1 + 1})
+
+        conn = Plug.Conn.send_chunked(conn, 200)
+
+        conn =
+          case request_count do
+            0 ->
+              # If this request is cancelled before this function returns,
+              # Bypass hangs expecting a response, so tell Bypass this call succeeded
+              bypass_route = {:any, :any}
+
+              [call_ref] =
+                :sys.get_state(bypass.pid).expectations[bypass_route].retained_plugs |> Map.keys()
+
+              Bypass.Instance.cast(
+                bypass.pid,
+                {:put_expect_result, bypass_route, call_ref, :ok_call}
+              )
+
+              Process.sleep(:infinity)
+              conn
+
+            1 ->
+              # check that comments properly reset idle timeout
+              Process.sleep(idle_timeout - 10)
+              {:ok, conn} = Plug.Conn.chunk(conn, ": keep-alive\n")
+              Process.sleep(idle_timeout - 10)
+              conn
+
+            _ ->
+              conn
+          end
+
+        {:ok, conn} = Plug.Conn.chunk(conn, ~s(data: #{request_count}\n\n))
+
+        conn
+      end)
+
+      start_producer(bypass, idle_timeout: idle_timeout)
+
+      refute_receive {:events, _}, idle_timeout
+      assert_receive {:events, [%Event{data: "1\n"}]}, @assert_receive_timeout
+    end
+
+    defp start_producer(bypass, opts \\ []) do
       url = "http://127.0.0.1:#{bypass.port}"
       headers = [{"test", "confirmed"}]
-      {:ok, producer} = start_link(url: url, headers: headers)
+      {:ok, producer} = start_link([url: url, headers: headers] ++ opts)
 
       {:ok, _consumer} = __MODULE__.SimpleSubscriber.start_link(self(), producer)
 

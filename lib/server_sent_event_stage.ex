@@ -19,7 +19,10 @@ defmodule ServerSentEventStage do
   The only required argument is `url`: it can be either a binary of the URL
   to connect to or a {module, fun, arguments} tuple.
 
-  Other arguments are passed as options to `GenStage.start_link/3`.
+  Optional arguments:
+  - `headers`: a list of `{"name", "value"}` pairs
+  - `idle_timeout`: milliseconds of inactivity after which the connection will be restarted
+  - `debug`, `name`, `timeout`, `spawn_opt`: options for `GenStage.start_link/3`
   """
   def start_link(args) do
     _url = Keyword.fetch!(args, :url)
@@ -38,13 +41,24 @@ defmodule ServerSentEventStage do
   end
 
   # Server functions
-  defstruct [:url, :headers, :connected_url, :conn, :ref, buffer: "", redirecting?: false]
+  defstruct [
+    :url,
+    :headers,
+    :connected_url,
+    :conn,
+    :ref,
+    :idle_timeout,
+    :idle_timer,
+    buffer: "",
+    redirecting?: false
+  ]
 
   @doc false
   def init(args) do
     state = %__MODULE__{
       url: Keyword.fetch!(args, :url),
-      headers: Keyword.get(args, :headers, [])
+      headers: Keyword.get(args, :headers, []),
+      idle_timeout: Keyword.get(args, :idle_timeout, nil)
     }
 
     {:producer, state}
@@ -57,7 +71,15 @@ defmodule ServerSentEventStage do
     {:noreply, [], state}
   end
 
+  def handle_info(:idle_timeout, state) do
+    Logger.warn(fn -> "#{__MODULE__} idle_timeout url=#{inspect(state.connected_url)}" end)
+    do_refresh!()
+    {:noreply, [], state}
+  end
+
   def handle_info(message, %{conn: conn} = state) when conn != nil do
+    state = reset_idle_timeout(state)
+
     case HTTP.stream(state.conn, message) do
       {:ok, conn, responses} ->
         state = %{state | conn: conn}
@@ -288,5 +310,18 @@ defmodule ServerSentEventStage do
 
   defp do_refresh! do
     send(self(), :connect)
+  end
+
+  defp reset_idle_timeout(state) do
+    if state.idle_timer != nil do
+      :ok = Process.cancel_timer(state.idle_timer, async: true, info: false)
+    end
+
+    timer =
+      if timeout = state.idle_timeout do
+        Process.send_after(self(), :idle_timeout, timeout)
+      end
+
+    %__MODULE__{state | idle_timer: timer}
   end
 end
