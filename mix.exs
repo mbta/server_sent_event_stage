@@ -5,7 +5,7 @@ defmodule ServerSentEventStage.MixProject do
     [
       app: :server_sent_event_stage,
       version: "1.1.0",
-      elixir: "~> 1.11",
+      elixir: ">= 1.11.4 and < 2.0.0",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       name: "ServerSentEventStage",
