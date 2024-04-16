@@ -194,10 +194,51 @@ defmodule ServerSentEventStageTest do
       GenStage.stop(pid)
     end
 
-    defp start_producer(bypass) do
+    test "applies idle timeout", %{bypass: bypass} do
+      idle_timeout = 200
+
+      {:ok, request_count} = Agent.start_link(fn -> 0 end)
+
+      Bypass.expect(bypass, fn conn ->
+        request_count = Agent.get_and_update(request_count, &{&1, &1 + 1})
+
+        conn = Plug.Conn.send_chunked(conn, 200)
+
+        conn =
+          case request_count do
+            0 ->
+              # ignore the connection termination in Bypass
+              Bypass.pass(bypass)
+
+              Process.sleep(:infinity)
+              conn
+
+            1 ->
+              # check that comments properly reset idle timeout
+              Process.sleep(idle_timeout - 10)
+              {:ok, conn} = Plug.Conn.chunk(conn, ": keep-alive\n")
+              Process.sleep(idle_timeout - 10)
+              conn
+
+            _ ->
+              conn
+          end
+
+        {:ok, conn} = Plug.Conn.chunk(conn, ~s(data: #{request_count}\n\n))
+
+        conn
+      end)
+
+      start_producer(bypass, idle_timeout: idle_timeout)
+
+      refute_receive {:events, _}, idle_timeout
+      assert_receive {:events, [%Event{data: "1\n"}]}, @assert_receive_timeout
+    end
+
+    defp start_producer(bypass, opts \\ []) do
       url = "http://127.0.0.1:#{bypass.port}"
       headers = [{"test", "confirmed"}]
-      {:ok, producer} = start_link(url: url, headers: headers)
+      {:ok, producer} = start_link([url: url, headers: headers] ++ opts)
 
       {:ok, _consumer} = __MODULE__.SimpleSubscriber.start_link(self(), producer)
 
