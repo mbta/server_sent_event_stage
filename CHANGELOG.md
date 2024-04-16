@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0
+
+- feat: optionally time out if stream goes idle (@boringcactus)
+- chore: upgrade to Erlang 24 (@boringcactus)
+
+This bumps the minimum supported version of Erlang to 24, and of Elixir to
+1.11.4. It also bumps the versions of `gen_stage` and `ex_doc`.
+
 ## 1.1.0
 
 - Bump mint to version 1.4 to support OTP 24.
