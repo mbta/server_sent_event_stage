@@ -207,17 +207,8 @@ defmodule ServerSentEventStageTest do
         conn =
           case request_count do
             0 ->
-              # If this request is cancelled before this function returns,
-              # Bypass hangs expecting a response, so tell Bypass this call succeeded
-              bypass_route = {:any, :any}
-
-              [call_ref] =
-                :sys.get_state(bypass.pid).expectations[bypass_route].retained_plugs |> Map.keys()
-
-              Bypass.Instance.cast(
-                bypass.pid,
-                {:put_expect_result, bypass_route, call_ref, :ok_call}
-              )
+              # ignore the connection termination in Bypass
+              Bypass.pass(bypass)
 
               Process.sleep(:infinity)
               conn
