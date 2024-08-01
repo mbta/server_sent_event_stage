@@ -39,6 +39,16 @@ children = [
 
 Full documentation is available on [HexDocs](https://hexdocs.pm/server_sent_event_stage/).
 
+## Development
+
+This project is developed against a version of Erlang that has trouble finding
+OpenSSL on some systems. You may see `* ssl : No usable OpenSSL found` in the
+Erlang compile output, and `mix deps.get` will subsequently fail due to missing
+SSL support. To fix this, compile Erlang using the `--with-ssl=<PATH>` option.
+For example, on macOS using OpenSSL installed through Homebrew:
+
+    KERL_CONFIGURE_OPTIONS="--with-ssl=$(brew --prefix openssl)" asdf install
+
 ## License
 
 `server_sent_event_stage` is licensed under the [MIT](LICENSE) license.
