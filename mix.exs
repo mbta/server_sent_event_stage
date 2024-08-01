@@ -32,7 +32,7 @@ defmodule ServerSentEventStage.MixProject do
     [
       {:gen_stage, "~> 1.1"},
       {:mint, "~> 1.4"},
-      {:castore, "~> 0.1", optional: true},
+      {:castore, "~> 0.1.0 or ~> 1.0", optional: true},
       {:bypass, "~> 2.1", only: :test, optional: true},
       {:lcov_ex, "~> 0.2", only: :test, optional: true},
       {:credo, "~> 1.6", only: :dev, optional: true},

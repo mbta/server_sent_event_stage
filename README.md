@@ -10,7 +10,7 @@ A GenStage producer which parses the ServerSentEvent protocol.
 def deps do
   [
     {:server_sent_event_stage, "~> 1.0.0"},
-    {:castore, "~> 0.1"}
+    {:castore, "~> 1.0"}
   ]
 end
 ```
