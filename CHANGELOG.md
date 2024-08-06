@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.1
+
+- Allow version 1.x of the optional `ca_store` dependency, as there are no breaking changes from 0.1.x.
+
 ## 1.2.0
 
 - feat: optionally time out if stream goes idle (@boringcactus)
