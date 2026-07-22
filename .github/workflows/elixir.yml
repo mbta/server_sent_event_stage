@@ -15,12 +15,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       # cache the ASDF directory, using the values from .tool-versions
       - name: ASDF cache
-        uses: actions/cache@8492260343ad570701412c2f464a5877dc76bace # v2
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.asdf
           key: ${{ runner.os }}-asdf-v4-${{ hashFiles('.tool-versions') }}
@@ -35,7 +35,7 @@ jobs:
     needs: build
     steps:
       - name: ASDF cache
-        uses: actions/cache@8492260343ad570701412c2f464a5877dc76bace # v2
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.asdf
           key: ${{ runner.os }}-asdf-v2-${{ hashFiles('.tool-versions') }}
@@ -48,12 +48,12 @@ jobs:
           echo "$ASDF_DIR/bin" >> $GITHUB_PATH
           echo "$ASDF_DIR/shims" >> $GITHUB_PATH
           $ASDF_DIR/bin/asdf reshim
-      - uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Restore dependencies cache
         id: deps-cache
-        uses: actions/cache@8492260343ad570701412c2f464a5877dc76bace # v2
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: deps
           key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
@@ -80,7 +80,7 @@ jobs:
           PR_SHA: ${{ github.event.pull_request.head.sha }}
         if: github.event.pull_request
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@82c141cc518b40d92cc801eee768e7aafc9c2fa2 # v2.3.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: elixir-lcov
           path: cover/
@@ -88,13 +88,13 @@ jobs:
         run: |
           mix hex.build
           mix docs
-      - uses: mbta/actions/dialyzer@af587ca71a208f34ae1271bd16a7bc98b4adfbcb # v1.24
+      - uses: mbta/actions/dialyzer@788f8e264e9ebb1b76b927c89e6466d5a162be80 # v2.24
   zizmor:
     name: Run zizmor 🌈
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Run zizmor 🌈
