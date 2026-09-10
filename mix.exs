@@ -37,7 +37,8 @@ defmodule ServerSentEventStage.MixProject do
       {:lcov_ex, "~> 0.2", only: :test, optional: true},
       {:credo, "~> 1.6", only: :dev, optional: true},
       {:dialyxir, "~> 1.1", only: :dev, optional: true},
-      {:ex_doc, "~> 0.22", optional: true}
+      {:ex_doc, "~> 0.22", optional: true},
+      {:sobelow, "~> 0.15", only: [:dev, :test], runtime: false, warn_if_outdated: true}
     ]
   end
 
