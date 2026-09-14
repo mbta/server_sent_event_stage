@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.0
+
+- Bump the minimum supported Elixir version to 1.12
+
 ## 1.2.1
 
 - Allow version 1.x of the optional `ca_store` dependency, as there are no breaking changes from 0.1.x.
