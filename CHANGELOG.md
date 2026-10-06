@@ -2,7 +2,7 @@
 
 ## 1.3.0
 
-- Bump the minimum supported Elixir version to 1.12
+- Bump the minimum supported Elixir version to 1.15
 
 ## 1.2.1
 
