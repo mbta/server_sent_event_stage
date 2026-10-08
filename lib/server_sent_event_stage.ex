@@ -72,7 +72,7 @@ defmodule ServerSentEventStage do
   end
 
   def handle_info(:idle_timeout, state) do
-    Logger.warn(fn -> "#{__MODULE__} idle_timeout url=#{inspect(state.connected_url)}" end)
+    Logger.warning(fn -> "#{__MODULE__} idle_timeout url=#{inspect(state.connected_url)}" end)
     do_refresh!()
     {:noreply, [], state}
   end
@@ -117,7 +117,7 @@ defmodule ServerSentEventStage do
 
   defp handle_unknown_info(message, state) do
     # ignore data received unexpectedly
-    Logger.warn(fn ->
+    Logger.warning(fn ->
       "#{__MODULE__} unexpected message: #{inspect(message)}\nState: #{inspect(state)}"
     end)
 
@@ -142,7 +142,7 @@ defmodule ServerSentEventStage do
   end
 
   defp handle_mint_response({:status, ref, code}, {%{ref: ref} = state, events}) do
-    Logger.warn(fn ->
+    Logger.warning(fn ->
       "#{__MODULE__} unexpected status url=#{inspect(state.connected_url)} code=#{code}"
     end)
 
