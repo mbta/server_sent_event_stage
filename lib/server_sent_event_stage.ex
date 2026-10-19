@@ -72,7 +72,7 @@ defmodule ServerSentEventStage do
   end
 
   def handle_info(:idle_timeout, state) do
-    Logger.warn(fn -> "#{__MODULE__} idle_timeout url=#{inspect(state.connected_url)}" end)
+    Logger.warning(fn -> "#{__MODULE__} idle_timeout url=#{inspect(state.connected_url)}" end)
     do_refresh!()
     {:noreply, [], state}
   end
@@ -117,7 +117,7 @@ defmodule ServerSentEventStage do
 
   defp handle_unknown_info(message, state) do
     # ignore data received unexpectedly
-    Logger.warn(fn ->
+    Logger.warning(fn ->
       "#{__MODULE__} unexpected message: #{inspect(message)}\nState: #{inspect(state)}"
     end)
 
@@ -132,9 +132,7 @@ defmodule ServerSentEventStage do
   defp handle_mint_response({:status, ref, redirect_code}, {%{ref: ref} = state, events})
        when redirect_code in [301, 302, 307] do
     Logger.debug(fn ->
-      "#{__MODULE__} connected, received redirect url=#{inspect(state.connected_url)} code=#{
-        redirect_code
-      }"
+      "#{__MODULE__} connected, received redirect url=#{inspect(state.connected_url)} code=#{redirect_code}"
     end)
 
     state = %{state | redirecting?: true}
@@ -142,7 +140,7 @@ defmodule ServerSentEventStage do
   end
 
   defp handle_mint_response({:status, ref, code}, {%{ref: ref} = state, events}) do
-    Logger.warn(fn ->
+    Logger.warning(fn ->
       "#{__MODULE__} unexpected status url=#{inspect(state.connected_url)} code=#{code}"
     end)
 
@@ -177,9 +175,7 @@ defmodule ServerSentEventStage do
 
     unless new_events == [] do
       Logger.info(fn ->
-        "#{__MODULE__} sending events url=#{inspect(state.connected_url)} count=#{
-          length(new_events)
-        }"
+        "#{__MODULE__} sending events url=#{inspect(state.connected_url)} count=#{length(new_events)}"
       end)
 
       for event <- new_events do
