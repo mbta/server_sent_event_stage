@@ -178,11 +178,7 @@ defmodule ServerSentEventStage do
         "#{__MODULE__} sending events url=#{inspect(state.connected_url)} count=#{length(new_events)}"
       end)
 
-      for event <- new_events do
-        Logger.debug(fn ->
-          inspect(event, limit: :infinity, printable_limit: :infinity)
-        end)
-      end
+      log_events(new_events)
     end
 
     state = %{state | buffer: buffer}
@@ -205,6 +201,14 @@ defmodule ServerSentEventStage do
 
     do_refresh!()
     {:halt, {state, events}}
+  end
+
+  defp log_events(events) do
+    for event <- events do
+      Logger.debug(fn ->
+        inspect(event, limit: :infinity, printable_limit: :infinity)
+      end)
+    end
   end
 
   @doc false
