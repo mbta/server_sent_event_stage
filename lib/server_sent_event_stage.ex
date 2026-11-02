@@ -255,6 +255,12 @@ defmodule ServerSentEventStage do
   defp scheme_atom("https"), do: :https
   defp scheme_atom("http"), do: :http
 
+  @dialyzer {:no_opaque, handle_connect_response: 3}
+  @spec handle_connect_response(
+          {:ok, Mint.HTTP.t()} | {:error, Mint.Types.error()},
+          URI.t(),
+          Mint.Types.headers()
+        ) :: {:ok, Mint.HTTP.t(), Mint.Types.request_ref()} | {:error, Mint.Types.error()}
   defp handle_connect_response({:ok, conn}, uri, headers) do
     headers = [
       {"Accept", "text/event-stream"} | headers
