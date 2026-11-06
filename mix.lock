@@ -25,6 +25,6 @@
   "plug_cowboy": {:hex, :plug_cowboy, "2.6.2", "753611b23b29231fb916b0cdd96028084b12aff57bfd7b71781bd04b1dbeb5c9", [:mix], [{:cowboy, "~> 2.7", [hex: :cowboy, repo: "hexpm", optional: false]}, {:cowboy_telemetry, "~> 0.3", [hex: :cowboy_telemetry, repo: "hexpm", optional: false]}, {:plug, "~> 1.14", [hex: :plug, repo: "hexpm", optional: false]}], "hexpm", "951ed2433df22f4c97b85fdb145d4cee561f36b74854d64c06d896d7cd2921a7"},
   "plug_crypto": {:hex, :plug_crypto, "1.2.5", "918772575e48e81e455818229bf719d4ab4181fcbf7f85b68a35620f78d89ced", [:mix], [], "hexpm", "26549a1d6345e2172eb1c233866756ae44a9609bd33ee6f99147ab3fd87fd842"},
   "ranch": {:hex, :ranch, "1.8.0", "8c7a100a139fd57f17327b6413e4167ac559fbc04ca7448e9be9057311597a1d", [:make, :rebar3], [], "hexpm", "49fbcfd3682fab1f5d109351b61257676da1a2fdbe295904176d5e521a2ddfe5"},
-  "sobelow": {:hex, :sobelow, "0.18.0", "2d74acc0f647a567403e9f31d81586d6d2740a42d73065fb9946a902c29cd233", [:mix], [{:jason, "~> 1.0", [hex: :jason, repo: "hexpm", optional: false]}], "hexpm", "4f25b06b5a205386f99f9bfe958e178d61636a31e6e060b2ccb91f0ddfaeebc6"},
+  "sobelow": {:hex, :sobelow, "0.18.1", "a8f175c6f2ba87fb7be536742b07cb1e6bc9297305a237f383b63c05ff55582b", [:mix], [{:jason, "~> 1.0", [hex: :jason, repo: "hexpm", optional: false]}], "hexpm", "57247d54ad77477bed63c72239ddfdb6e94d09261323de0101f9a8bcc0247c82"},
   "telemetry": {:hex, :telemetry, "0.4.3", "a06428a514bdbc63293cd9a6263aad00ddeb66f608163bdec7c8995784080818", [:rebar3], [], "hexpm", "eb72b8365ffda5bed68a620d1da88525e326cb82a75ee61354fc24b844768041"},
 }
