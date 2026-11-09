@@ -7,7 +7,7 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 jobs:
   build:
@@ -51,6 +51,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Restore dependencies cache
         id: deps-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -65,6 +66,27 @@ jobs:
           mix deps.get
       - name: Compile (warnings as errors)
         run: mix compile --force --warnings-as-errors
+      - name: Validate release tag
+        if: github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::Release commit must be on main"
+            exit 1
+          fi
+          mix run --no-start --no-compile -e '
+            tag = System.fetch_env!("RELEASE_TAG")
+            version = Mix.Project.config()[:version]
+
+            unless Regex.match?(~r/\Av(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\z/, tag) do
+              Mix.raise("Release tag must be a stable semantic version prefixed with v")
+            end
+
+            unless tag == "v" <> version do
+              Mix.raise("Release tag #{inspect(tag)} does not match project version #{inspect(version)}")
+            end
+          '
       - name: Check formatting
         run: mix format --check-formatted
       - name: Credo
@@ -91,6 +113,45 @@ jobs:
           mix hex.build
           mix docs
       - uses: mbta/actions/dialyzer@788f8e264e9ebb1b76b927c89e6466d5a162be80 # v2.24
+  publish:
+    name: Publish to Hex.pm
+    needs: [ci, zizmor]
+    if: github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    runs-on: ubuntu-latest
+    environment: hex-release
+    concurrency:
+      group: hex-publish
+      cancel-in-progress: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: ASDF cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.asdf
+          key: ${{ runner.os }}-asdf-v5-${{ hashFiles('.tool-versions') }}
+        id: asdf-cache
+      - uses: asdf-vm/actions/install@b7bcd026f18772e44fe1026d729e1611cc435d47 # v4.0.1
+        if: steps.asdf-cache.outputs.cache-hit != 'true'
+      - name: Setup ASDF environment
+        run: |
+          export ASDF_DIR=$HOME/.asdf
+          echo "ASDF_DIR=$ASDF_DIR" >> $GITHUB_ENV
+          echo "ASDF_DATA_DIR=$ASDF_DIR" >> $GITHUB_ENV
+          echo "$ASDF_DIR/bin" >> $GITHUB_PATH
+          echo "$ASDF_DIR/shims" >> $GITHUB_PATH
+          $ASDF_DIR/bin/asdf reshim
+      - name: Install dependencies
+        run: |
+          mix local.rebar --force
+          mix local.hex --force
+          mix deps.get
+      - name: Publish package and documentation
+        run: mix hex.publish --yes
+        env:
+          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
   zizmor:
     name: Run zizmor 🌈
     runs-on: ubuntu-latest
